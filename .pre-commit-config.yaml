@@ -1,0 +1,117 @@
+# Pre-commit hooks for comprehensive secret scanning
+# Install: pip install pre-commit
+# Setup: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # TruffleHog - Find secrets in your code
+  - repo: https://github.com/trufflesecurity/trufflehog
+    rev: v3.82.13
+    hooks:
+      - id: trufflehog
+        name: TruffleHog Secret Scan
+        entry: trufflehog filesystem
+        language: system
+        pass_filenames: false
+        args:
+          - .
+          - --only-verified
+          - --fail
+
+  # Gitleaks - Detect hardcoded secrets
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: Gitleaks Secret Scan
+        entry: gitleaks
+        language: system
+        pass_filenames: false
+        args:
+          - detect
+          - --source
+          - .
+          - --verbose
+          - --no-git
+
+  # Check for files that should never be committed
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-json
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  # Prevent .env files from being committed
+  - repo: local
+    hooks:
+      - id: block-env-files
+        name: Block .env files
+        entry: bash -c 'if git diff --cached --name-only | grep -E "\.env"; then echo "ERROR: .env files detected!"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: block-mcp-configs
+        name: Block MCP configuration files
+        entry: bash -c 'if git diff --cached --name-only | grep -E "(mcp\.json|\.mcp\.json|mcp_server_config\.json|claude_desktop_config\.json|claude\.json)"; then echo "ERROR: MCP configuration files detected!"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: block-backup-files
+        name: Block backup files with potential secrets
+        entry: bash -c 'if git diff --cached --name-only | grep -E "\.(bak|old|tmp)$|_backup\."; then echo "WARNING: Backup files detected - verify no secrets"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: scan-anthropic-keys
+        name: Scan for Anthropic API keys
+        entry: bash -c 'if git diff --cached | grep -E "sk-ant-api[0-9]{2}-[a-zA-Z0-9-_]{95}"; then echo "ERROR: Anthropic API key detected!"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: scan-github-tokens
+        name: Scan for GitHub tokens
+        entry: bash -c 'if git diff --cached | grep -E "gh[pousr]_[a-zA-Z0-9]{36,}"; then echo "ERROR: GitHub token detected!"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: scan-openai-keys
+        name: Scan for OpenAI API keys
+        entry: bash -c 'if git diff --cached | grep -E "sk-[a-zA-Z0-9]{48}"; then echo "ERROR: OpenAI API key detected!"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: scan-aws-keys
+        name: Scan for AWS keys
+        entry: bash -c 'if git diff --cached | grep -E "AKIA[0-9A-Z]{16}"; then echo "ERROR: AWS Access Key detected!"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: validate-gitignore
+        name: Validate .gitignore has security entries
+        entry: bash -c '
+          if [ -f .gitignore ]; then
+            MISSING=()
+            grep -q "\.env" .gitignore || MISSING+=(".env")
+            grep -q "credentials" .gitignore || MISSING+=("credentials")
+            grep -q -E "(mcp\.json|claude.*config)" .gitignore || MISSING+=("MCP configs")
+            if [ ${#MISSING[@]} -gt 0 ]; then
+              echo "WARNING: .gitignore missing security patterns: ${MISSING[@]}"
+            fi
+          fi
+        '
+        language: system
+        pass_filenames: false
+        always_run: true
